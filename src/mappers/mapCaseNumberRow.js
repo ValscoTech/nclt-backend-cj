@@ -1,0 +1,15 @@
+export const mapCaseNumberRow = (x = {}, idx = 0) => ({
+  sNo: idx + 1,
+  filingNo: x?.filing_no ?? null,
+  caseNo: x?.case_no ?? null,
+  caseType: x?.case_type_desc_cis ?? null,
+  caseTitle1: x?.case_title1 ?? null,
+  caseTitle2: x?.case_title2 ?? null,
+  benchLocation: x?.bench_location_name ?? null,
+  courtNo: x?.court_no ?? null,
+  filingDate: x?.date_of_filing ?? null,
+  registrationDate: x?.regis_date ?? null,
+  nextListingDate: x?.next_list_date ?? null,
+  disposalDate: x?.disposal_date ?? null,
+  caseStatus: x?.status ?? null,
+});
