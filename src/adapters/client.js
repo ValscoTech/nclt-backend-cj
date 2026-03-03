@@ -8,7 +8,7 @@ export const createClient = () => {
     axios.create({
       jar,
       withCredentials: true,
-      timeout: 600000,
+      timeout: 180000,
     }),
   );
 };
