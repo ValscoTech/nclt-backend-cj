@@ -73,7 +73,7 @@ export const extractModalData = (data, { proceedingsLimit = null } = {}) => {
         court_no: cleanText(finalRow?.court_no),
         bench_nature: cleanText(finalRow?.bench_nature_descr),
         first_listing_date: cleanText(finalRow?.listing_date),
-        case_stage: cleanText(finalRow?.current_status),
+        case_stage: stripHtmlBreaks(finalRow?.current_status),
       }
     : null;
 

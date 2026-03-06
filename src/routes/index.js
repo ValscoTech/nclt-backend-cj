@@ -4,6 +4,7 @@ import filingRoutes from "./filing.routes.js";
 import partyRoutes from "./party.routes.js"
 import caseNumberRoutes from "./caseNumber.routes.js";
 import advocateRoutes from "./advocate.routes.js";
+import orderRoutes from "./order.routes.js";
 const router = express.Router();
 
 router.use("/", advocateRoutes);
@@ -11,4 +12,5 @@ router.use("/", cinRoutes);
 router.use("/", filingRoutes);
 router.use("/", partyRoutes);
 router.use("/", caseNumberRoutes);
+router.use("/", orderRoutes);
 export default router;
