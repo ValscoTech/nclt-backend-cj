@@ -12,6 +12,8 @@
     "axios-cookiejar-support": "^6.0.4",
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "firebase-admin": "^13.8.0",
+    "node-cron": "^4.2.1",
     "tough-cookie": "^5.1.2"
   },
   "devDependencies": {
