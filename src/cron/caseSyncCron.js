@@ -86,8 +86,9 @@ function buildUpdatePayload(newData, ncltCase) {
     : ncltCase.nextHearingDate;
  
   // Most recent proceeding = index 0 (API returns newest first)
-  const previousHearingDate =
-    proceedingDetails?.[0]?.listing_date || ncltCase.previousHearingDate;
+  const previousHearingDate = proceedingDetails?.[0]?.listing_date
+  ? formatDate(proceedingDetails[0].listing_date)
+  : ncltCase.previousHearingDate;
  
   // Build caseHistory in the same shape as the DB
   const caseHistory = (proceedingDetails || []).map((p) => ({
