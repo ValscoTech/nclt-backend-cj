@@ -22,7 +22,7 @@ cron.schedule('0 0 * * *', async () => {
 });
 
 //Schedule the job to run at 8 AM each day
-cron.schedule('0 8 * * *', async () => {
+/*cron.schedule('0 8 * * *', async () => {
   console.log('Starting due notifications job at', new Date());
   try {
     await sendDueNotifications();
@@ -32,4 +32,4 @@ cron.schedule('0 8 * * *', async () => {
   }
 }, {
   timezone: "Asia/Kolkata"
-});
+});*/
