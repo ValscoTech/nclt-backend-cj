@@ -235,9 +235,9 @@ gcloud compute addresses delete nclt-ip --region=asia-south1 --quiet
 
 Defined in `src/server.js`, running inside the container with `TZ=Asia/Kolkata`:
 
-| Cron | Time (IST) | Function |
-|---|---|---|
-| `0 0 * * *` | 00:00 daily | `caseSyncCronJob` |
-| `0 8 * * *` | 08:00 daily | `sendDueNotifications` |
+| Cron | Time (IST) | Function | Status |
+|---|---|---|---|
+| `0 0 * * *` | 00:00 daily | `caseSyncCronJob` | Active |
+| `0 8 * * *` | 08:00 daily | `sendDueNotifications` | Disabled — cron schedule and function commented out in `src/server.js` / `src/cron/caseSyncCron.js` |
 
 Because `--restart=always` is set, the container comes back after any VM reboot and the schedules resume automatically.
