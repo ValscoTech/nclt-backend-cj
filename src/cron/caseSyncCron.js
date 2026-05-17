@@ -589,8 +589,6 @@ async function sendEveningNotifications() {
   }
 }*/
 
-caseSyncCronJob();
-
-export { caseSyncCronJob, 
+export { caseSyncCronJob,
   //sendDueNotifications 
   };
