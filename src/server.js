@@ -1,5 +1,5 @@
 import app from "./app.js";
-import { caseSyncCronJob, sendDueNotifications } from "./cron/caseSyncCron.js";
+import { caseSyncCronJob } from "./cron/caseSyncCron.js";
 import cron from "node-cron";
 
 const PORT = process.env.PORT || 5000;
