@@ -1,4 +1,4 @@
-import { db, auth, admin } from "../config/firebaseAdminConfig.js"; 
+import { db, auth, admin } from "../config/firebaseAdminConfig.js";
 import { createClient } from "../adapters/client.js";
 import { BASE, NCLT_HEADERS } from "../adapters/headers.js";
 import { initSession } from "../adapters/session.js";
@@ -8,29 +8,31 @@ import { extractModalData } from "../utils/extractModalData.js";
 const SESSION_RETRY_ATTEMPTS = 3;
 const SESSION_RETRY_DELAY_MS = 3000;
 
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 async function caseSyncCronJob() {
 
   const client = createClient();
   const sessionReady = await initSessionWithRetry(client);
- 
+
   if (!sessionReady) {
     console.error("Session init failed after all retries. Aborting cron run.");
     return;
   }
   const dbCases = await getNcltCasesFromDb();
- 
+
   for (const ncltCase of dbCases) {
     try {
       const filingNo = ncltCase.filingNo;
       const newData = await getNewData(client, filingNo);
- 
+
       if (!newData || newData.error) {
         console.error(`Failed to fetch new data for case ${ncltCase.id}:`, newData?.message);
         continue;
       }
- 
+
       const updatePayload = buildUpdatePayload(newData, ncltCase);
- 
+
       await db
         .collection(ncltCase.collection)
         .doc(ncltCase.id)
@@ -40,9 +42,9 @@ async function caseSyncCronJob() {
       const nextHearingDate = updatePayload.nextHearingDate;
       if (nextHearingDate && nextHearingDate !== ncltCase.nextHearingDate) {
         createNotification(ncltCase.owner, ncltCase.id, nextHearingDate, ncltCase)
-        .catch(err => console.error(`Notification creation failed for case ${ncltCase.id}:`, err));
+          .catch(err => console.error(`Notification creation failed for case ${ncltCase.id}:`, err));
       }
- 
+
       console.log(`Completed NCLT case update for case: ${ncltCase.id} at ${new Date()}`);
     } catch (err) {
       console.error(`Error updating NCLT case ${ncltCase.id}:`, err.message);
@@ -66,7 +68,7 @@ async function initSessionWithRetry(client) {
   }
   return false;
 }
- 
+
 function buildUpdatePayload(newData, ncltCase) {
   const {
     header,
@@ -78,36 +80,36 @@ function buildUpdatePayload(newData, ncltCase) {
     nclatDetails,
     defectiveDates,
   } = newData;
- 
+
   // Extract next hearing date from case_stage
   // e.g. "Case Next List Date: 18-05-2026" → "18/05/2026"
 
   const now = new Date();
   const existingDate = ncltCase.nextHearingDate;
-  const newDateParsed = parseNextHearingDate(currentDetails?.case_stage).replace(/-/g, "/");
+  const newDateParsed = parseNextHearingDate(currentDetails?.case_stage)?.replace(/-/g, "/");
 
   const shouldUpdateHearingDate =
-  !existingDate ||
-  (
-    newDateParsed &&
+    !existingDate ||
     (
-      toDate(existingDate) <= now ||
-      toDate(newDateParsed) >= toDate(existingDate)
-    )
-  );
+      newDateParsed &&
+      (
+        toDate(existingDate) <= now ||
+        toDate(newDateParsed) >= toDate(existingDate)
+      )
+    );
 
   const rawNextHearingDate = parseNextHearingDate(currentDetails?.case_stage);
   let nextHearingDate = null;
-  if(rawNextHearingDate) {
+  if (rawNextHearingDate) {
     nextHearingDate = shouldUpdateHearingDate ? rawNextHearingDate.replace(/-/g, "/") : existingDate;
   }
-    
- 
+
+
   // Most recent proceeding = index 0 (API returns newest first)
   const previousHearingDate = proceedingDetails?.[0]?.listing_date
-  ? formatDate(proceedingDetails[0].listing_date)
-  : ncltCase.previousHearingDate;
- 
+    ? formatDate(proceedingDetails[0].listing_date)
+    : ncltCase.previousHearingDate;
+
   // Build caseHistory in the same shape as the DB
   const caseHistory = (proceedingDetails || []).map((p) => ({
     causeListType: "NCLT",
@@ -116,27 +118,27 @@ function buildUpdatePayload(newData, ncltCase) {
     hearingDate: formatDate(p.listing_date),
     purpose: p.listing_purpose || p.next_listing_purpose || "Listing / Order",
   }));
- 
+
   // Advocates from partyDetails (P = petitioner, R = respondent)
   const petitioner = partyDetails?.find((p) => p.party_type?.startsWith("P"));
   const respondent = partyDetails?.find((p) => p.party_type?.startsWith("R"));
- 
+
   const petitionerAdvocate = petitioner?.advocate_name || ncltCase.petitionerAdvocate || "";
   const respondentAdvocate =
     respondent?.advocate_name && respondent.advocate_name !== "NA"
       ? respondent.advocate_name
       : ncltCase.respondentAdvocate || "";
- 
+
   return {
     previousHearingDate,
     nextHearingDate,
- 
+
     petitionerAdvocate,
     respondentAdvocate,
- 
+
     ncltProceedingDetails: proceedingDetails || ncltCase.ncltProceedingDetails || [],
     caseHistory,
- 
+
     rawNcltData: {
       listRow: {
         filingNumber: header?.filingNo || ncltCase.filingNo,
@@ -157,42 +159,44 @@ function buildUpdatePayload(newData, ncltCase) {
         nclatDetails: nclatDetails || [],
       },
     },
- 
+
     refreshedAt: new Date(),
   };
 }
 
 const toDate = (str) => {
-    if (!str) return null;
-    const [dd, mm, yyyy] = str.split("/");
-    return new Date(`${yyyy}-${mm}-${dd}`);
+  if (!str) return null;
+  const parts = str.split("/");
+  if (parts.length !== 3) return null;
+  const [dd, mm, yyyy] = parts;
+  return new Date(`${yyyy}-${mm}-${dd}`);
 };
 
 async function getNewData(client, filingNoInput) {
-    
-      try {
-        const filingNo = String(filingNoInput || "").trim();
-        if (!filingNo)
-          return;
-        
-        const resp = await client.get(`${BASE}/caseHistoryalldetails.drt`, {
-          headers: { ...NCLT_HEADERS, Accept: "*/*" },
-          params: { filing_no: filingNo, flagIA: "false" },
-        });
-    
-        const data = safeJson(resp.data);
-    
-        const modal = extractModalData(data, {
-          proceedingsLimit: 200,
-        });
-    
-        return modal;
-      } catch (err) {
-        return {
-          error: "Internal server error",
-          message: err.message,
-        };
-      }
+
+  try {
+    const filingNo = String(filingNoInput || "").trim();
+    if (!filingNo)
+      return;
+
+    const resp = await client.get(`${BASE}/caseHistoryalldetails.drt`, {
+      headers: { ...NCLT_HEADERS, Accept: "*/*" },
+      params: { filing_no: filingNo, flagIA: "false" },
+    });
+
+    const data = safeJson(resp.data);
+
+    const modal = extractModalData(data, {
+      proceedingsLimit: 200,
+    });
+
+    return modal;
+  } catch (err) {
+    return {
+      error: "Internal server error",
+      message: err.message,
+    };
+  }
 }
 
 async function getNcltCasesFromDb() {
@@ -202,6 +206,7 @@ async function getNcltCasesFromDb() {
     // Admin SDK query
     const querySnapshot = await casesRef
       .where("courtName", "==", "NCLT")
+      //.where("owner", "==", "hhXchcgjrtP3brr1AxQMJiVbbMV2")
       .get();
 
     const cases = [];
@@ -217,39 +222,44 @@ async function getNcltCasesFromDb() {
 
 function parseNextHearingDate(caseStage) {
   if (!caseStage) return null;
-  const match = caseStage.match(/(\d{2}-\d{2}-\d{4})/);
+  const match = String(caseStage).match(/(\d{2}-\d{2}-\d{4})/);
   return match ? match[1] : null;
 }
- 
+
 // "08-04-2026" or "08-04-2026  12:19:19" → "08/04/2026" or "08/04/2026  12:19:19"
 function formatDate(raw) {
   if (!raw) return "";
-  return raw.replace(/-/g, "/");
+  return String(raw).replace(/-/g, "/");
 }
- 
+
 // "18-05-2026" (DD-MM-YYYY) → Date object
 function parseDateDMY(dateStr) {
   if (!dateStr) return null;
   const [day, month, year] = dateStr.split("/").map(Number); // ← match dd/mm/yyyy
   return new Date(year, month - 1, day);
 }
- 
+
 async function createNotification(ownerId, caseId, nextHearingDate, ncltCase) {
+  if (!ownerId) {
+    console.log("No ownerId provided for case:", caseId);
+    return;
+  }
+
   try {
     const lawyerDoc = await db.collection("lawyers").doc(ownerId).get();
     const clientDoc = await db.collection("clients").doc(ownerId).get();
- 
+
     if (!lawyerDoc.exists && !clientDoc.exists) {
       console.log("Owner not found for case:", caseId);
       return;
     }
- 
+
     const ownerDoc = lawyerDoc.exists ? lawyerDoc : clientDoc;
     const fcmTokens = ownerDoc.data().fcmTokens || [];
- 
+
     const hearingDate = parseDateDMY(nextHearingDate);
     if (!hearingDate) return;
- 
+
     const reminder1 = new Date(hearingDate);
     reminder1.setHours(8, 0, 0, 0);
 
@@ -258,25 +268,25 @@ async function createNotification(ownerId, caseId, nextHearingDate, ncltCase) {
 
     // Store notification in DB
     const event1 = await db.collection("eventReminders").add({
-      "caseId" : caseId,
-      "caseNo" : `${ncltCase.caseNo}`,
-      "createdAt" : new Date(),
-      "eventTitle" : `${ncltCase.petitionerName} VS ${ncltCase.respondentName}`,
-      "recipientId" : ownerId,
-      "reminderTime" : reminder1,
-      "scheduledBy" : ownerId,
-      "status" : "scheduled"
+      "caseId": caseId,
+      "caseNo": `${ncltCase.caseNo}`,
+      "createdAt": new Date(),
+      "eventTitle": `${ncltCase.petitionerName} VS ${ncltCase.respondentName}`,
+      "recipientId": ownerId,
+      "reminderTime": reminder1,
+      "scheduledBy": ownerId,
+      "status": "scheduled"
     });
 
     const event2 = await db.collection("eventReminders").add({
-      "caseId" : caseId,
-      "caseNo" : `${ncltCase.caseNo}`,
-      "createdAt" : new Date(),
-      "eventTitle" : `Update Next Hearing: ${ncltCase.petitionerName} VS ${ncltCase.respondentName}`,
-      "recipientId" : ownerId,
-      "reminderTime" : reminder2,
-      "scheduledBy" : ownerId,
-      "status" : "scheduled"
+      "caseId": caseId,
+      "caseNo": `${ncltCase.caseNo}`,
+      "createdAt": new Date(),
+      "eventTitle": `Update Next Hearing: ${ncltCase.petitionerName} VS ${ncltCase.respondentName}`,
+      "recipientId": ownerId,
+      "reminderTime": reminder2,
+      "scheduledBy": ownerId,
+      "status": "scheduled"
     });
 
     console.log(event1.id + " " + event2.id);
@@ -285,7 +295,7 @@ async function createNotification(ownerId, caseId, nextHearingDate, ncltCase) {
     console.error("Error creating notification:", err);
   }
 }
- 
+
 /*async function sendDueNotifications() {
   try {
     const today = new Date();
@@ -589,8 +599,7 @@ async function sendEveningNotifications() {
   }
 }*/
 
-caseSyncCronJob();
-
-export { caseSyncCronJob, 
+export {
+  caseSyncCronJob,
   //sendDueNotifications 
-  };
+};
