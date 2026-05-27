@@ -31,18 +31,17 @@ async function caseSyncCronJob() {
         continue;
       }
 
-      const updatePayload = buildUpdatePayload(newData, ncltCase);
+      const { payload: updatePayload, shouldUpdateHearingDate } = buildUpdatePayload(newData, ncltCase);
 
       await db
-        .collection(ncltCase.collection)
-        .doc(ncltCase.id)
-        .set(updatePayload, { merge: true });
+          .collection(ncltCase.collection)
+          .doc(ncltCase.id)
+          .set(updatePayload, { merge: true });
 
-      // Fire notification if next hearing date changed
-      const nextHearingDate = updatePayload.nextHearingDate;
-      if (nextHearingDate && nextHearingDate !== ncltCase.nextHearingDate) {
-        createNotification(ncltCase.owner, ncltCase.id, nextHearingDate, ncltCase)
-          .catch(err => console.error(`Notification creation failed for case ${ncltCase.id}:`, err));
+      // Notify only if date actually changed to a valid new date
+      if (shouldUpdateHearingDate && updatePayload.nextHearingDate !== "N/A") {
+          createNotification(ncltCase.owner, ncltCase.id, updatePayload.nextHearingDate, ncltCase)
+              .catch(err => console.error(`Notification creation failed for case ${ncltCase.id}:`, err));
       }
 
       console.log(`Completed NCLT case update for case: ${ncltCase.id} at ${new Date()}`);
@@ -81,36 +80,21 @@ function buildUpdatePayload(newData, ncltCase) {
     defectiveDates,
   } = newData;
 
-  // Extract next hearing date from case_stage
-  // e.g. "Case Next List Date: 18-05-2026" → "18/05/2026"
-
-  const now = new Date();
-  const existingDate = ncltCase.nextHearingDate;
-  const newDateParsed = parseNextHearingDate(currentDetails?.case_stage)?.replace(/-/g, "/");
-
-  const shouldUpdateHearingDate =
-    !existingDate ||
-    (
-      newDateParsed &&
-      (
-        toDate(existingDate) <= now ||
-        toDate(newDateParsed) >= toDate(existingDate)
-      )
-    );
-
+  const existingDate = ncltCase.nextHearingDate ? ncltCase.nextHearingDate : "N/A";
   const rawNextHearingDate = parseNextHearingDate(currentDetails?.case_stage);
-  let nextHearingDate = null;
-  if (rawNextHearingDate) {
-    nextHearingDate = shouldUpdateHearingDate ? rawNextHearingDate.replace(/-/g, "/") : existingDate;
+  const newDateParsed = rawNextHearingDate ? rawNextHearingDate.replace(/-/g, "/") : "N/A";
+
+  let shouldUpdateHearingDate = true;
+  if (existingDate !== "N/A" && newDateParsed !== "N/A") {
+      shouldUpdateHearingDate = toDate(newDateParsed) > toDate(existingDate);
   }
 
+  const nextHearingDate = shouldUpdateHearingDate ? newDateParsed : existingDate;
 
-  // Most recent proceeding = index 0 (API returns newest first)
   const previousHearingDate = proceedingDetails?.[0]?.listing_date
     ? formatDate(proceedingDetails[0].listing_date)
     : ncltCase.previousHearingDate;
 
-  // Build caseHistory in the same shape as the DB
   const caseHistory = (proceedingDetails || []).map((p) => ({
     causeListType: "NCLT",
     judge: "—",
@@ -119,7 +103,6 @@ function buildUpdatePayload(newData, ncltCase) {
     purpose: p.listing_purpose || p.next_listing_purpose || "Listing / Order",
   }));
 
-  // Advocates from partyDetails (P = petitioner, R = respondent)
   const petitioner = partyDetails?.find((p) => p.party_type?.startsWith("P"));
   const respondent = partyDetails?.find((p) => p.party_type?.startsWith("R"));
 
@@ -129,16 +112,13 @@ function buildUpdatePayload(newData, ncltCase) {
       ? respondent.advocate_name
       : ncltCase.respondentAdvocate || "";
 
-  return {
+  const payload = {
     previousHearingDate,
     nextHearingDate,
-
     petitionerAdvocate,
     respondentAdvocate,
-
     ncltProceedingDetails: proceedingDetails || ncltCase.ncltProceedingDetails || [],
     caseHistory,
-
     rawNcltData: {
       listRow: {
         filingNumber: header?.filingNo || ncltCase.filingNo,
@@ -159,9 +139,10 @@ function buildUpdatePayload(newData, ncltCase) {
         nclatDetails: nclatDetails || [],
       },
     },
-
     refreshedAt: new Date(),
   };
+
+  return { payload, shouldUpdateHearingDate };  // return both
 }
 
 const toDate = (str) => {
