@@ -4,6 +4,7 @@ import { BASE, NCLT_HEADERS } from "../adapters/headers.js";
 import { initSession } from "../adapters/session.js";
 import { safeJson } from "../utils/safeJson.js";
 import { extractModalData } from "../utils/extractModalData.js";
+import { syncNcltOrders, notifyNewOrders } from "./order.sync.helper.js";
 
 const SESSION_RETRY_ATTEMPTS = 3;
 const SESSION_RETRY_DELAY_MS = 3000;
@@ -37,6 +38,20 @@ async function caseSyncCronJob() {
           .collection(ncltCase.collection)
           .doc(ncltCase.id)
           .set(updatePayload, { merge: true });
+
+      // Sync any new orders to the orders sub-collection
+      const proceedingDetails = newData.proceedingDetails || [];
+      let newOrders = [];
+      try {
+        newOrders = await syncNcltOrders(ncltCase.id, proceedingDetails, ncltCase.collection);
+      } catch (err) {
+        console.error(`[OrderSync] Failed for case ${ncltCase.id}:`, err);
+      }
+
+      if (newOrders.length > 0) {
+        notifyNewOrders(ncltCase.owner, ncltCase.id, newOrders, ncltCase)
+          .catch(err => console.error(`[OrderNotify] Failed for case ${ncltCase.id}:`, err));
+      }
 
       // Notify only if date actually changed to a valid new date
       if (shouldUpdateHearingDate && updatePayload.nextHearingDate !== "N/A") {
@@ -228,7 +243,7 @@ async function createNotification(ownerId, caseId, nextHearingDate, ncltCase) {
 
   try {
     const lawyerDoc = await db.collection("lawyers").doc(ownerId).get();
-    const clientDoc = await db.collection("clients").doc(ownerId).get();
+    const clientDoc = await db.collection("client").doc(ownerId).get();
 
     if (!lawyerDoc.exists && !clientDoc.exists) {
       console.log("Owner not found for case:", caseId);
